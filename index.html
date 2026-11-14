@@ -159,7 +159,7 @@ body.simple #bottom{right:24px}body.simple:not(.has-sel) #ctrl{right:24px}
 /* phones: the globe fills the screen and the panels become one sheet with tabs */
 @media (max-width:760px), (max-height:520px){
  :root{--sh:42vh}
- .fade,#cam,#tools .box,#simpleBtn,#zin,#zout,#tl,#tr,#tilt,#save,#expBtn,#peak,#top .sub,#top .right .date{display:none!important}
+ .fade,#cam,#tools .box,#simpleBtn,#zin,#zout,#tl,#tr,#save,#expBtn,#peak,#top .sub,#top .right .date{display:none!important}
  #top{padding:0 12px}#top .brand{letter-spacing:1.4px;font-size:11px}#top .right{gap:10px}
  #tools{left:10px;right:64px;top:52px;gap:6px}#tools .btn,#ctrl .btn{height:36px;padding:0 9px;font-size:10px}
  #ctrl{right:10px;top:52px}
@@ -546,7 +546,8 @@ function assess(f, day, at){
  const [tk,tv]=rows[0],[sk,sv]=rows[1], share=tv/f.supply*100, h=at.getHours();
  const when = h<5 ? "overnight" : h<12 ? "this morning" : h<17 ? "this afternoon" : (day||h<21) ? "this evening" : "tonight";
  let head;
- if(tk==="wind") head = share>=40 ? `Wind is carrying Britain ${when}.` : `Wind is leading Britain's power ${when}.`;
+ if(sv>=0.9*tv) head = `${FUEL[tk]} and ${FUEL[sk].toLowerCase()} are neck and neck ${when}.`; // the top two are within a tenth of each other
+ else if(tk==="wind") head = share>=40 ? `Wind is carrying Britain ${when}.` : `Wind is leading Britain's power ${when}.`;
  else if(tk==="gas") head = `Gas is doing the heavy lifting ${when}.`;
  else if(tk==="solar") head = "The sun is Britain's biggest power station right now.";
  else if(tk==="imports") head = "Imports are Britain's biggest source of power right now.";
