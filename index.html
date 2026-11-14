@@ -412,7 +412,7 @@ function ukPeriod(){ // settlement date and period for "now", UK clock time
 }
 const got={ci:null,pv:null,price:null}; // newest carbon, solar-share and price histories, kept between refreshes
 async function loadLive(){ // the national picture is shown as soon as it arrives; every other feed fills in when it answers
- const periods = await getJSON(EL+"/generation/outturn/summary?includeNegativeGeneration=true&format=json",20000);
+ const periods = await getJSON(EL+"/generation/outturn/summary?includeNegativeGeneration=true&format=json",300000); // this feed is sometimes very slow; nothing else can stand in for it, so wait
  const now=new Date(), d1=new Date(now-25*36e5), up=ukPeriod();
  const show=()=>{state.frames=buildFrames(periods, got.pv, got.ci?got.ci.m:null, got.price?got.price.h:null);};
  if(!state.live){ state.extra={freq:null,carbonNow:null,priceNow:null,solarKnown:true,sitesKnown:false}; state.fc={demand:[],wind:[],solar:[]}; state.healthWait=true; }
