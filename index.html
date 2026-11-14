@@ -322,7 +322,7 @@ const LINKS = [
 const COUNTRY = {FR:["France",[1.3,49.9]],BE:["Belgium",[3.6,51.05]],NL:["Netherlands",[4.6,52.2]],NO:["Norway",[6.6,59.2]],DK:["Denmark",[8.9,55.9]],NI:["Northern Ireland",[-6.5,54.75]],IE:["Ireland",[-7.3,53.0]]};
 const CAT = {WIND:"wind",CCGT:"gas",OCGT:"gas",NUCLEAR:"nuclear",BIOMASS:"biomass",NPSHYD:"hydro",PS:"storage",COAL:"other",OIL:"other",OTHER:"other"};
 const ORDER=["nuclear","biomass","imports","hydro","storage","other","wind","solar","gas"]; // chart stack, steady sources at the bottom
-const DEFAULT_HOME = {center:[-2.25,51.96],zoom:6.0,bearing:24,pitch:69}; // tilted, with the horizon showing above Britain
+const DEFAULT_HOME = {center:[-2.36,52.45],zoom:6.0,bearing:20,pitch:59}; // tilted, with a little horizon showing above Britain
 let HOME = DEFAULT_HOME;
 try{const h=JSON.parse(localStorage.getItem("ukpv-home")); if(h&&Array.isArray(h.center)&&isFinite(h.zoom)) HOME=h;}catch(e){}
 const LAYERS = [["sites","Power sites"],["names","Site names"],["links","Interconnector cables"],["flows","Country flow labels"],["wind","Wind now (flowing)"],["rain","Rain radar"],["cuts","Power cuts (unplanned)"]];
