@@ -356,7 +356,11 @@ const isDay = d => sunElevation(d||new Date(),54,-2) > -3;
 
 /* ------------------------------------------------------------------ data */
 const EL="https://data.elexon.co.uk/bmrs/api/v1";
-async function getJSON(url){const r=await fetch(url,{cache:"no-store"}); if(!r.ok) throw new Error(url+" "+r.status); return r.json();}
+async function getJSON(url,ms){ // every feed has a time limit, so one slow feed cannot hold up the page
+ const ac=new AbortController(), tm=setTimeout(()=>ac.abort(),ms||15000);
+ try{const r=await fetch(url,{cache:"no-store",signal:ac.signal}); if(!r.ok) throw new Error(url+" "+r.status); return await r.json();}
+ finally{clearTimeout(tm);}
+}
 const opt = async fn => {try{return await fn();}catch(e){console.warn(e);return null;}};
 
 function buildFrames(periods, solarShare, ciHist, priceHist){
@@ -406,25 +410,38 @@ function ukPeriod(){ // settlement date and period for "now", UK clock time
  const p=new Intl.DateTimeFormat("en-GB",{timeZone:"Europe/London",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",hour12:false}).formatToParts(new Date()).reduce((o,x)=>(o[x.type]=x.value,o),{});
  return {date:`${p.year}-${p.month}-${p.day}`,sp:Math.floor(((+p.hour%24)*60+ +p.minute)/30)+1};
 }
-async function loadLive(){
- const periods = await getJSON(EL+"/generation/outturn/summary?includeNegativeGeneration=true&format=json");
+const got={ci:null,pv:null,price:null}; // newest carbon, solar-share and price histories, kept between refreshes
+async function loadLive(){ // the national picture is shown as soon as it arrives; every other feed fills in when it answers
+ const periods = await getJSON(EL+"/generation/outturn/summary?includeNegativeGeneration=true&format=json",20000);
  const now=new Date(), d1=new Date(now-25*36e5), up=ukPeriod();
- const [ci,pv,freq,price,ndf,wf,pn,bo,sf] = await Promise.all([
-  opt(async()=>{const c=await getJSON(`https://api.carbonintensity.org.uk/intensity/${iso(d1).slice(0,16)}Z/${iso(now).slice(0,16)}Z`); const m={}; let last=null;
-   for(const r of c.data){const v=r.intensity.actual ?? r.intensity.forecast; m[r.from.slice(0,16)]=v; if(v!=null) last=v;} return {m,last};}),
-  opt(async()=>{const g=await getJSON(`https://api.carbonintensity.org.uk/generation/${iso(d1).slice(0,16)}Z/${iso(now).slice(0,16)}Z`); const m={};
-   for(const r of g.data){const x=r.generationmix.find(q=>q.fuel==="solar"); if(x) m[r.from.slice(0,16)]=x.perc;} return m;}),
-  opt(async()=>{const f=await getJSON(EL+`/system/frequency?from=${iso(now-10*6e4)}&to=${iso(now)}&format=json`); return f.data[f.data.length-1].frequency;}),
-  opt(async()=>{const m=await getJSON(EL+`/balancing/pricing/market-index?from=${iso(d1)}&to=${iso(now)}&format=json`); const h={}; let last=null, lt="";
-   for(const r of m.data) if(r.price>0){h[r.startTime.slice(0,16)]=r.price; if(r.startTime>lt){lt=r.startTime;last=r.price;}} return {h,last};}),
-  opt(async()=>{const f=await getJSON(EL+"/datasets/NDF?format=json"); return f.data.map(r=>({t:r.startTime,v:gw(r.demand)})).sort((a,b)=>a.t<b.t?-1:1);}),
-  opt(async()=>{const f=await getJSON(EL+`/forecast/generation/wind/latest?from=${iso(now)}&to=${iso(+now+14*36e5)}&format=json`); return f.data.map(r=>({t:r.startTime,v:gw(r.generation)})).sort((a,b)=>a.t<b.t?-1:1);}),
-  opt(async()=>{const f=await getJSON(EL+`/datasets/PN?settlementDate=${up.date}&settlementPeriod=${up.sp}&format=json`); return f.data;}),
-  opt(async()=>{const f=await getJSON(EL+`/datasets/BOALF?from=${iso(now-90*6e4)}&to=${iso(+now+30*6e4)}&format=json`); return f.data;}),
-  opt(async()=>{const j=await getJSON("https://api.neso.energy/api/3/action/datastore_search?resource_id=db6c038f-98af-4570-ab60-24d71ebd0ae5&limit=80");
-   return j.result.records.map(r=>({t:r.DATE_GMT.slice(0,10)+"T"+r.TIME_GMT+":00Z",v:gw(r.EMBEDDED_SOLAR_FORECAST)})).sort((a,b)=>a.t<b.t?-1:1);})
- ]);
- state.health = await opt(async()=>{
+ const show=()=>{state.frames=buildFrames(periods, got.pv, got.ci?got.ci.m:null, got.price?got.price.h:null);};
+ if(!state.live){ state.extra={freq:null,carbonNow:null,priceNow:null,solarKnown:true,sitesKnown:false}; state.fc={demand:[],wind:[],solar:[]}; state.healthWait=true; }
+ show(); state.live=true; render();
+ const part=(fn,apply)=>opt(fn).then(v=>{try{apply(v);}catch(e){console.warn(e);} render();});
+ part(async()=>{const c=await getJSON(`https://api.carbonintensity.org.uk/intensity/${iso(d1).slice(0,16)}Z/${iso(now).slice(0,16)}Z`); const m={}; let last=null;
+   for(const r of c.data){const v=r.intensity.actual ?? r.intensity.forecast; m[r.from.slice(0,16)]=v; if(v!=null) last=v;} return {m,last};},
+  v=>{if(v){got.ci=v; state.extra.carbonNow=v.last; show();}});
+ part(async()=>{const g=await getJSON(`https://api.carbonintensity.org.uk/generation/${iso(d1).slice(0,16)}Z/${iso(now).slice(0,16)}Z`); const m={};
+   for(const r of g.data){const x=r.generationmix.find(q=>q.fuel==="solar"); if(x) m[r.from.slice(0,16)]=x.perc;} return m;},
+  v=>{if(v) got.pv=v; state.extra.solarKnown=!!got.pv; show();});
+ part(async()=>{const f=await getJSON(EL+`/system/frequency?from=${iso(now-10*6e4)}&to=${iso(now)}&format=json`); return f.data[f.data.length-1].frequency;},
+  v=>{state.extra.freq=v;});
+ part(async()=>{const m=await getJSON(EL+`/balancing/pricing/market-index?from=${iso(d1)}&to=${iso(now)}&format=json`); const h={}; let last=null, lt="";
+   for(const r of m.data) if(r.price>0){h[r.startTime.slice(0,16)]=r.price; if(r.startTime>lt){lt=r.startTime;last=r.price;}} return {h,last};},
+  v=>{if(v){got.price=v; state.extra.priceNow=v.last; show();}});
+ part(async()=>{const f=await getJSON(EL+"/datasets/NDF?format=json"); return f.data.map(r=>({t:r.startTime,v:gw(r.demand)})).sort((a,b)=>a.t<b.t?-1:1);},
+  v=>{if(v) state.fc.demand=v;});
+ part(async()=>{const f=await getJSON(EL+`/forecast/generation/wind/latest?from=${iso(now)}&to=${iso(+now+14*36e5)}&format=json`); return f.data.map(r=>({t:r.startTime,v:gw(r.generation)})).sort((a,b)=>a.t<b.t?-1:1);},
+  v=>{if(v) state.fc.wind=v;});
+ part(async()=>{const j=await getJSON("https://api.neso.energy/api/3/action/datastore_search?resource_id=db6c038f-98af-4570-ab60-24d71ebd0ae5&limit=80");
+   return j.result.records.map(r=>({t:r.DATE_GMT.slice(0,10)+"T"+r.TIME_GMT+":00Z",v:gw(r.EMBEDDED_SOLAR_FORECAST)})).sort((a,b)=>a.t<b.t?-1:1);},
+  v=>{if(v) state.fc.solar=v;});
+ part(()=>Promise.all([
+   opt(async()=>{const f=await getJSON(EL+`/datasets/PN?settlementDate=${up.date}&settlementPeriod=${up.sp}&format=json`,30000); return f.data;}),
+   opt(async()=>{const f=await getJSON(EL+`/datasets/BOALF?from=${iso(now-90*6e4)}&to=${iso(+now+30*6e4)}&format=json`,30000); return f.data;})]),
+  r=>{const pn=r&&r[0], bo=r&&r[1]; if(!pn||!pn.length) return; // never let site data break the national picture
+   ingestPN(pn); if(bo&&bo.length) ingestBOA(bo); state.unitIds=[...new Set(pn.map(x=>x.bmUnit).filter(id=>id&&unitSite(id)>=0))]; state.extra.sitesKnown=true; setTimeout(loadSiteHistory,1500);});
+ part(async()=>{
   const [lp,sw]=await Promise.all([opt(()=>getJSON(EL+`/forecast/system/loss-of-load?from=${iso(now)}&to=${iso(+now+12*36e5)}&format=json`)),opt(()=>getJSON(EL+`/datasets/SYSWARN?publishDateTimeFrom=${iso(now-12*36e5)}&publishDateTimeTo=${iso(now)}&format=json`))]);
   const best={}; if(lp) for(const r of lp.data){const b=best[r.startTime]; if(!b||r.forecastHorizon<b.forecastHorizon) best[r.startTime]=r;} // nearest-term forecast for each half hour
   const rows=Object.values(best), margin=rows.length?Math.min(...rows.map(r=>r.deratedMargin))/1000:null, lolp=rows.length?Math.max(...rows.map(r=>r.lossOfLoadProbability)):null;
@@ -433,18 +450,14 @@ async function loadLive(){
    .filter(w=>/MARGIN NOTICE|DEMAND REDUCTION|DEMAND CONTROL|CAPACITY MARKET NOTICE/i.test(w.type+" "+w.text)).sort((a,b)=>a.t<b.t?1:-1);
   const active=warns.length&&!/cancel/i.test(warns[0].type+" "+warns[0].text)?warns[0]:null; // newest relevant notice, unless it is a cancellation
   return {margin,lolp,tight,active,known:!!lp};
- });
- state.frames=buildFrames(periods, pv, ci?ci.m:null, price?price.h:null);
- state.extra={freq, carbonNow:ci?ci.last:null, priceNow:price?price.last:null, solarKnown:!!pv, sitesKnown:!!(pn&&pn.length)};
- state.fc={demand:ndf||[],wind:wf||[],solar:sf||[]};
- try{ if(pn&&pn.length){ ingestPN(pn); if(bo&&bo.length) ingestBOA(bo); state.unitIds=[...new Set(pn.map(r=>r.bmUnit).filter(id=>id&&unitSite(id)>=0))]; } }catch(e){console.warn("Site data:",e);} // never let site data break the national picture
+ }, h=>{state.health=h; state.healthWait=false;});
 }
 async function loadSiteHistory(){ // 24 h of declared output for every mapped unit, fetched once in the background
  if(state.histLoaded||!state.unitIds.length) return;
  state.histLoaded=true;
  const now=new Date(), ids=state.unitIds, jobs=[], jobs2=[];
  for(let i=0;i<ids.length;i+=80){ const q=ids.slice(i,i+80).map(x=>"bmUnit="+encodeURIComponent(x)).join("&"), span=`from=${iso(now-24.6*36e5)}&to=${iso(now)}&`;
-  jobs.push(opt(()=>getJSON(EL+"/datasets/PN/stream?"+span+q))); jobs2.push(opt(()=>getJSON(EL+"/datasets/BOALF/stream?"+span+q))); }
+  jobs.push(opt(()=>getJSON(EL+"/datasets/PN/stream?"+span+q,45000))); jobs2.push(opt(()=>getJSON(EL+"/datasets/BOALF/stream?"+span+q,45000))); }
  const parts=(await Promise.all(jobs)).filter(Boolean), parts2=(await Promise.all(jobs2)).filter(Boolean);
  if(!parts.length){state.histLoaded=false;return;}
  ingestPN(parts.flat()); if(parts2.length) ingestBOA(parts2.flat());
@@ -481,6 +494,7 @@ function healthNow(){
 function renderHealth(){
  const box=$("health"), h=healthNow();
  if(!h){box.className="hl un"; box.innerHTML='<div class="hb"><i></i><i></i><i></i><b>NOT AVAILABLE</b></div><div class="hw">Needs live data.</div>'; return;}
+ if(state.healthWait){box.className="hl un"; box.innerHTML='<div class="hb"><i></i><i></i><i></i><b>CHECKING</b></div><div class="hw"></div>'; return;}
  if(!isLive()){box.className="hl un"; box.innerHTML='<div class="hb"><i></i><i></i><i></i><b>LIVE ONLY</b></div><div class="hw">Supply health is shown for the present moment, not for replays.</div>'; return;}
  box.className="hl "+(["ok","am","rd"][h.lvl]||"un");
  box.innerHTML=`<div class="hb"><i></i><i></i><i></i><b>${h.label}</b></div><div class="hw">${h.why.map(esc).join(" ")}</div>`;
@@ -1013,7 +1027,7 @@ $("simpleBtn").onclick=()=>setSimple(!simple); setSimple(simple);
 function tick(){const n=new Date(); $("clock").textContent=n.toLocaleTimeString("en-GB"); $("date").textContent=n.toLocaleDateString("en-GB",{weekday:"short",day:"2-digit",month:"short",year:"numeric"}).toUpperCase();}
 async function refresh(){
  try{await loadLive(); state.live=true;}
- catch(e){console.warn("Live data failed:",e); if(!state.frames.length||!state.live){sample(); state.live=false;}}
+ catch(e){console.warn("Live data failed:",e); if(!state.frames.length||!state.live){sample(); state.live=false; clearTimeout(refresh.t); refresh.t=setTimeout(refresh,20000);}} // no live picture yet: try again in 20 s
  render();
  if(state.live) setTimeout(loadSiteHistory,2500);
 }
