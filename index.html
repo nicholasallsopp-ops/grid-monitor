@@ -969,7 +969,7 @@ function initMap(){
  $("zin").onclick=()=>map.zoomIn(); $("zout").onclick=()=>map.zoomOut();
  $("tl").onclick=()=>map.easeTo({bearing:map.getBearing()-30,duration:700}); $("tr").onclick=()=>map.easeTo({bearing:map.getBearing()+30,duration:700});
  $("tilt").onclick=()=>map.easeTo({pitch:map.getPitch()>50?0:map.getPitch()>20?65:38,duration:700});
- $("home").onclick=()=>map.flyTo({...HOME,duration:1600});
+ $("home").onclick=()=>map.flyTo({...HOME,zoom:HOME.zoom-(isPhone()?1.1:0),duration:1600}); // phones open further out, so GB returns there too
  const camNow=()=>{const c=map.getCenter(); return {center:[+c.lng.toFixed(3),+c.lat.toFixed(3)],zoom:+map.getZoom().toFixed(2),bearing:+map.getBearing().toFixed(1),pitch:+map.getPitch().toFixed(1)};};
  camShow=()=>{try{const c=camNow(); $("cam").textContent=`VIEW ${c.center[1].toFixed(2)}°N ${Math.abs(c.center[0]).toFixed(2)}°${c.center[0]<0?"W":"E"} · ZOOM ${c.zoom.toFixed(1)} · TILT ${Math.round(c.pitch)}° · HEADING ${Math.round((c.bearing+360)%360)}°${camExtra}`;}catch(e){}};
  map.on("move",camShow); map.on("load",camShow); map.on("moveend",()=>{if(state.mode!=="auto") applyMode();});
