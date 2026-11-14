@@ -530,7 +530,7 @@ function assess(f, day, at){
  const rows = Object.entries(f.v).filter(e=>e[0]!=="imports"); if(f.net>0) rows.push(["imports",f.net]);
  rows.sort((a,b)=>b[1]-a[1]);
  const [tk,tv]=rows[0],[sk,sv]=rows[1], share=tv/f.supply*100, h=at.getHours();
- const when = !day ? (h<5?"overnight":"tonight") : h<12 ? "this morning" : h<17 ? "this afternoon" : "this evening";
+ const when = h<5 ? "overnight" : h<12 ? "this morning" : h<17 ? "this afternoon" : (day||h<21) ? "this evening" : "tonight";
  let head;
  if(tk==="wind") head = share>=40 ? `Wind is carrying Britain ${when}.` : `Wind is leading Britain's power ${when}.`;
  else if(tk==="gas") head = `Gas is doing the heavy lifting ${when}.`;
@@ -948,7 +948,7 @@ function initMap(){
    new maplibregl.Marker({element:el,anchor:"left",offset:[-x.size/2,0]}).setLngLat([x.lon,x.lat]).addTo(map);
    x.el=el;
   }
-  ready=true; fitPad(); applyMode(); drawLinks(); updateSites(); applyFilter(); applyLayers();
+  ready=true; const cr=document.querySelector(".maplibregl-ctrl-attrib"); if(cr){cr.removeAttribute("open");cr.classList.remove("maplibregl-compact-show");} fitPad(); applyMode(); drawLinks(); updateSites(); applyFilter(); applyLayers();
   let raf=0; map.on("move",()=>{if(!raf) raf=requestAnimationFrame(()=>{raf=0;layoutLabels();});});
  });
  $("zin").onclick=()=>map.zoomIn(); $("zout").onclick=()=>map.zoomOut();
